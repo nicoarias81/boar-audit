@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Boar: the zero is not a zero</title>
+<style>
+:root{--ink:#101114;--mut:#6b7280;--line:#e6e7ea;--red:#b42318;--green:#0a7d54;--amber:#a9720a;--bg:#fff}
+*{box-sizing:border-box}
+body{margin:0;padding:46px 54px;font:15px/1.58 -apple-system,Segoe UI,Inter,sans-serif;color:var(--ink);background:var(--bg);max-width:1060px}
+h1{font-size:28px;line-height:1.15;margin:0 0 8px;letter-spacing:-.025em}
+.sub{color:var(--mut);font-size:13.5px;margin:0 0 28px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:34px 0 10px;font-weight:650}
+h3{font-size:16px;margin:22px 0 6px;letter-spacing:-.01em}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--mut);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.card{border:1px solid var(--line);border-left:3px solid var(--ink);border-radius:8px;padding:15px 18px;margin:16px 0}
+.hero{border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:14px 0 8px;background:#fbfbfc}
+.hero b{font-size:17px}
+code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:#f5f6f8;padding:1px 5px;border-radius:4px}
+ul{margin:8px 0 0;padding-left:20px}li{margin:6px 0}
+.tag{display:inline-block;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:700;padding:1px 6px;border-radius:3px;vertical-align:1px}
+.m{background:#e7f4ee;color:var(--green)}.v{background:#eef1f7;color:#334} .h{background:#fdf3e2;color:var(--amber)}
+.foot{margin-top:32px;border-top:1px solid var(--line);padding-top:12px;color:var(--mut);font-size:12px}
+.small{font-size:13px;color:var(--mut)}
+.win{color:var(--green);font-weight:650}.lose{color:var(--red)}
+</style></head><body>
+
+<h1>The zero is not a zero</h1>
+<p class="sub">An audit of <em>boar</em> — one month, 387 experiments, a 1.7B model in a 3 GB APK with no internet permission. Everything below is recomputed from the author's published artefacts or measured in a run of my own; tags say which.</p>
+
+<div class="hero">
+<p style="margin:0 0 10px"><b>The finding, in one sentence:</b> the headline "0 of 71 wins" is an artefact of taking one sample per item — the single item that was not a loss in the published Codex-family run is a <strong>stable win for the phone app, 3 out of 3, under the same judge model</strong>, when the judge is allowed to sample.</p>
+<p style="margin:0" class="small">That does not rescue the app: the aggregate gap to the 0.50 bar is 5–10× larger than any judge noise I could measure, and it survives everything in this audit. It does mean the study is presenting a statistic with no resolution as its most quoted number, while the honest version — <em>"at most about 4% of items win"</em> — is both weaker and more defensible.</p>
+</div>
+
+<h2>1. What the published record actually says <span class="tag v">verified in artefacts</span></h2>
+<table>
+<tr><th>Judge family</th><th>n</th><th>U-total</th><th>95% CI</th><th>win</th><th>tie</th><th>loss</th></tr>
+<tr><td>G1 Claude Opus vs Claude refs</td><td class="n">71</td><td class="n">0.1668</td><td class="n">0.129–0.209</td><td class="n">0</td><td class="n">0</td><td class="n">71</td></tr>
+<tr><td>G2 gpt-5.6-sol vs Codex refs</td><td class="n">71</td><td class="n">0.2440</td><td class="n">—</td><td class="n">0</td><td class="n"><strong>1</strong></td><td class="n">70</td></tr>
+</table>
+<p class="small">From <code>arms/device-final/aggregates/m1.json</code>. Note the second row: it is not 0 losses-plus-zero, it is <strong>70 losses and one order-split</strong> (<code>win_tie_rate 0.00704</code>). Recomputing the 150 per-order verdicts in <code>dev-s42.codex.jsonl</code> gives the same: 74 item-orders lost, 1 split, and the split is <strong>cw-038</strong> — reference in order A, phone in order B.</p>
+
+<h2>2. So I re-ran that judge with sampling on <span class="tag m">measured</span></h2>
+<p>I reconstructed the published judge pipeline (<code>judge-core.mjs</code>: system prompt, pairwise template, blind ordering) and re-judged the four <em>closest</em> losses — the boundary where a count of zero is decided — using the real published pairs: app answers from <code>df-m1-s42.jsonl</code>, references from <code>bench/v0.4/refs/v2/claude.jsonl</code> (sha-verified content), 2 presentation orders × 3 repeats × 2 judge models, temperature 1.0. <strong>48 calls</strong>, all parsed.</p>
+
+<table>
+<tr><th>Item</th><th>Published verdict (G2)</th><th>gpt-5.6-sol, 3 repeats</th><th>Opus, 3 repeats</th></tr>
+<tr><td>cw-038</td><td class="lose">order-split (counted as tie)</td><td class="win">win · win · win</td><td class="lose">loss ×3</td></tr>
+<tr><td>cw-020</td><td class="lose">loss</td><td>win · tie · loss</td><td class="lose">loss ×3</td></tr>
+<tr><td>cw-011</td><td class="lose">loss</td><td class="lose">loss ×3</td><td class="lose">loss ×3</td></tr>
+<tr><td>cw-014</td><td class="lose">loss</td><td class="lose">loss ×3</td><td class="lose">loss ×3</td></tr>
+</table>
+
+<ul>
+<li><strong>Judge noise, measured:</strong> Claude Opus flipped <strong>0 of 8</strong> order-verdicts across repeats (0.0%). gpt-5.6-sol flipped <strong>2 of 8</strong> (25%). Item-level, one of the four closest losses is not stable at all.</li>
+<li><strong>The floor is where the claim is made.</strong> Both families agree the app loses the other 70; nobody disputes that. What is disputed is the digit "0".</li>
+<li>Rule of three on 0/71 gives a 95% upper bound of <strong>4.1%</strong> — the ruler cannot distinguish zero wins from one, two, or three, and my measurement puts one on the board.</li>
+</ul>
+
+<h2>3. Why the win-rate was always going to read as zero <span class="tag m">measured + code</span></h2>
+<p>A win requires the judge to prefer the app in <em>both</em> presentation orders. The reference it has to beat scores an absolute <strong>3.874 / 5</strong> on the same rubric (<code>abs_ref</code>, G1 aggregates) and is written by the same model family that judges it. Under that ceiling the win condition is close to structurally unattainable: on the earlier v0.2 ruler, every configuration — including the desktop <code>deep+thinking</code> tier that is an order of magnitude larger — also scored exactly 0 wins. A metric that returns zero for a 35B model and for a 1.7B model is not measuring the 1.7B.</p>
+
+<div class="card">
+<p style="margin:0"><b>What I would publish instead.</b> Lead with U and its interval: <code>0.167 [0.129–0.209]</code>, gap to the bar <strong>0.33 — eight times the CI width</strong>, five to ten times the judge noise I measured. Then state the win-rate honestly as <em>"≤ 4% of 71 items (95% bound); 1 item wins stably under re-judging at temperature 1.0"</em>. Same conclusion, no free ammunition for anyone who wants to dismiss the record.</p>
+</div>
+
+<h2>4. Three more things I found while looking <span class="tag m">measured</span></h2>
+
+<h3>a. The screen stage runs at α ≈ 0.25, and ~49 false positives were expected</h3>
+<p>387 registry rows resolve to about <strong>250 independent hypotheses</strong>; 194 of them are judged screens. The frozen promotion rule (wins ≥ control+3 on 20-item slices, or Δ ≥ +0.03 at SE 0.045) implies a per-test α of about <strong>0.25</strong> — I checked both arms of it (P(wins≥12 | n=20, null) = 0.2517). The escalation ladder catches most of them: SEFIX-ALL gained +0.023 on the screen and was withdrawn when cross-validation gave −0.002. But of the <strong>52 positive rows carrying a CI</strong>, Benjamini–Hochberg at q=0.05 leaves 19, and 4 of the 9 per-pack deltas (travel, health, outdoors, firstaid) do not survive a Bonferroni at k=9. The pooled Δ does not depend on them; the prose about individual packs does.</p>
+
+<h3>b. The "conditional prove" pack list contradicts the frozen criterion</h3>
+<p>PACKPROOF's pre-registered criterion reads <em>sentences must use only packs that PROVE</em>; the count was <strong>0 of 9</strong>. The close-out report then introduces a weaker "conditional prove" rule and names 4 packs as satisfying it — a rule that appears in no criterion file — while one of those four (qa-health-se) has a pooled Δ of +0.05 with a CI of −0.15 to +0.25. That is the one place in the record where a number outruns its own rule.</p>
+
+<h3>c. "215 experiments without gain" is not 215 negative results</h3>
+<p>The registry splits it as 187 closed + 28 "not detected", and the registry's own definition says not-detected is <em>not</em> evidence of no effect; a parity arm is excluded from the count entirely. The honest phrasing is <em>"about 250 hypotheses tested; 187 closed by their own frozen rule"</em> — which is a stronger statement about method and a weaker one about the null.</p>
+
+<h2>5. The experiment this record should run next <span class="tag h">recommendation</span></h2>
+<p>The 4B model was killed on memory, not on quality — and the memory problem looks like a repack artefact rather than a phone limit:</p>
+<ul>
+<li>At identical pack contexts the <strong>4B beats the 1.7B by +0.121</strong> (0.650 vs 0.529 on bench v0.1 EN, F-1401). That is the largest measured quality delta anywhere in the registry.</li>
+<li>Its kill cause is recorded as <strong>~2.3 GiB copied into anonymous memory</strong> by the ARM weight repack, RSS 4.7–5.0 GiB at kill (F-686) — while the <em>same class</em> of model on the same phone later completed 73/73 runs at PSS 4.76–4.92 GB (F-2078).</li>
+<li>Quantisation was only ever tested <strong>upward</strong> (Q8_0 vs Q4_K_M, D-186). There is no 3-bit cell anywhere in the registry.</li>
+</ul>
+<p><strong>Run:</strong> Qwen3-4B at <code>Q3_K_S</code> or <code>IQ3_XXS</code>, q8_0 KV, mmap-backed weights with no anonymous repack, ctx 2048, two seeds. <strong>GO iff</strong> PSS ≤ 4.7 GB, zero LMK kills, bench ratio ≥ 0.60, p50 ≤ 40 s. <strong>Falsifier:</strong> ratio &lt; 0.56 or PSS still over budget with mmap — then the drop was correct and this audit is wrong about it. Expected: bench +0.08 to +0.12, ruler U plausibly 0.165 → 0.25–0.35.</p>
+
+<div class="foot">
+<strong>Reproduction and limits.</strong> Bench code and items cloned from <code>github.com/r4topunk/boar-bench</code>; registry from <code>boar-research</code>; traces from the <code>r4topunk/boar-traces</code> dataset. Headline aggregates recomputed with the author's own <code>m1_agg.py</code> and matched to <code>m1.json</code>. My judge run used the gateway API with the reconstructed prompt, not the Codex CLI harness, and the run's frozen references file is not published (I used the repo's pinned copy, content-consistent) — so the 3/3 result on cw-038 should be read as <em>the published judge model, sampling on, reproduced outside the original harness</em>, not as a byte-identical rerun. Judge model id used: <code>anthropic/claude-opus-5-5</code> (the one recorded in the run; the 4.6 id returns 404 on that gateway) and <code>openai/gpt-5.6-sol</code>. Raw verdicts: 48 rows, <code>judgments.jsonl</code>. Tags: <span class="tag v">verified</span> read in code/artefacts · <span class="tag m">measured</span> produced by this audit · <span class="tag h">recommendation</span> untested proposal.
+</div>
+</body></html>
